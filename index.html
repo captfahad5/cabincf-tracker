@@ -3,10 +3,8 @@
 <head>
 <title>Cabin CF Live Expiry Tracker</title>
 <style>
-body { font-family: Arial; padding: 20px; margin:0; }
+body { font-family: Arial; padding: 20px; }
 input, button { padding: 4px; margin: 2px; font-size:12px; cursor:pointer; }
-
-.table-container { overflow-x:auto; }
 
 table { 
     border-collapse: collapse; 
@@ -19,13 +17,13 @@ th, td {
     padding: 6px; 
     text-align: center; 
     vertical-align: middle; 
-    word-break: break-word;
 }
 th:nth-child(1), td:nth-child(1) { white-space: nowrap; } 
 th:nth-child(2), td:nth-child(2) { white-space: nowrap; } 
-th:nth-child(3), td:nth-child(3) { text-align: left; max-width: 300px; } 
+th:nth-child(3), td:nth-child(3) { text-align: left; word-break: break-word; max-width: 300px; } 
 th:nth-child(7), td:nth-child(7) { 
     text-align: left; 
+    word-break: break-word; 
     max-width: 400px; 
     min-width: 200px; 
     white-space: pre-wrap; 
@@ -58,14 +56,6 @@ input.trackerInput { width: 90px; font-size: 11px; padding: 2px; }
 .aircraftCell { cursor: pointer; color: black; text-decoration: none; font-weight: bold; }
 .aircraftCell:hover { color: #007bff; }
 #clearedTabBtn { margin-left:10px; padding:4px 8px; background:#6c757d; color:white; border:none; cursor:pointer; }
-
-/* MOBILE RESPONSIVE */
-@media(max-width: 768px){
-  input, button { font-size:10px; padding:2px; }
-  .actionBtns { flex-direction: column; gap:2px; align-items: flex-start; }
-  .trackerInput { width:70px; }
-  th, td { font-size:12px; padding:4px; }
-}
 </style>
 </head>
 <body>
@@ -87,7 +77,6 @@ Expiry Date:
 <button id="clearedTabBtn" onclick="toggleClearedTab()">Cleared Entries</button>
 <input type="file" id="importFile" style="display:none" />
 
-<div class="table-container">
 <table id="cfTable">
 <tr>
 <th>Aircraft</th>
@@ -100,42 +89,53 @@ Expiry Date:
 <th>Action</th>
 </tr>
 </table>
-</div>
+
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore-compat.js"></script>
 
 <script>
+// Firebase Configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyDQEwq76yLe8bv7Pc4ATjIGq_uwX1idQto",
+  authDomain: "cabin-cf-tracker.firebaseapp.com",
+  projectId: "cabin-cf-tracker",
+  storageBucket: "cabin-cf-tracker.firebasestorage.app",
+  messagingSenderId: "533581915976",
+  appId: "1:533581915976:web:c48d482403fded6fd2b57d"
+};
+
+// Initialize Firebase
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// Firestore collections
+const itemsCol = db.collection('cfItems');
+const clearedCol = db.collection('cfClearedItems');
+
 let items = [];
 let clearedItems = [];
-let editIndex = null;
+let editId = null;
 let currentFilter = "";
 let showingCleared = false;
 
-// --- Load JSON from file (fallback to localStorage if fails) ---
-function loadJSON() {
-    fetch('Cabin_CF_Tracker.json')
-    .then(res => res.json())
-    .then(data => {
-        if(data.active && data.cleared){
-            items = data.active;
-            clearedItems = data.cleared;
-        } else if(Array.isArray(data)){
-            items = data;
-            clearedItems = [];
-        } else {
-            console.error("Invalid JSON format");
-        }
-        renderTable();
-    })
-    .catch(err => {
-        console.warn("Failed to load JSON, using localStorage", err);
-        items = JSON.parse(localStorage.getItem("cfItems")) || [];
-        clearedItems = JSON.parse(localStorage.getItem("cfClearedItems")) || [];
-        renderTable();
+// Listen to Active Items
+itemsCol.onSnapshot(snapshot => {
+    items = [];
+    snapshot.forEach(doc => {
+        items.push({ id: doc.id, ...doc.data() });
     });
-}
+    if(!showingCleared) renderTable();
+});
 
-// --- Save Functions ---
-function saveData(){ localStorage.setItem("cfItems", JSON.stringify(items)); }
-function saveClearedData(){ localStorage.setItem("cfClearedItems", JSON.stringify(clearedItems)); }
+// Listen to Cleared Items
+clearedCol.onSnapshot(snapshot => {
+    clearedItems = [];
+    snapshot.forEach(doc => {
+        clearedItems.push({ id: doc.id, ...doc.data() });
+    });
+    if(showingCleared) renderClearedTable();
+});
 
 function calculateDays(expiry){
     let today = new Date(); today.setHours(0,0,0,0);
@@ -143,13 +143,13 @@ function calculateDays(expiry){
     return Math.ceil((expDate - today)/(1000*60*60*24));
 }
 
-// Rectification update
+// Rectification update (Changed from oninput to onblur to prevent spamming Firebase writes)
 function updateRectification(i,value){
-    items[i].rectification = value;
-    saveData();
+    let item = items[i];
+    itemsCol.doc(item.id).update({ rectification: value });
 }
 
-// --- Render Active Table ---
+// Render Active Table
 function renderTable(){
     let table = document.getElementById("cfTable");
     table.innerHTML = `<tr>
@@ -175,9 +175,7 @@ function renderTable(){
             <td>${item.expiry}</td>
             <td>${daysLeft}</td>
             <td class="statusCell ${statusClass}">${statusText}</td>
-            <td contenteditable="true" oninput="updateRectification(${index}, this.innerText)" style="white-space: pre-wrap; text-align:left; max-width:400px; min-width:200px;">
-                ${item.rectification || ''}
-            </td>
+            <td contenteditable="true" onblur="updateRectification(${index}, this.innerText)" style="white-space: pre-wrap; text-align:left; max-width:400px; min-width:200px;">${item.rectification || ''}</td>
             <td>
                 <div class="actionBtns">
                     ${actionBtn || ''}
@@ -194,12 +192,14 @@ function renderTable(){
     });
 }
 
-// --- Render Cleared Table ---
+// Render Cleared Table
 function renderClearedTable(){
     let table = document.getElementById("cfTable");
     table.innerHTML = `<tr>
     <th>Aircraft</th><th>Date</th><th>Description</th><th>Expiry Date</th>
     <th>Days Left</th><th>Status</th><th>Rectification</th><th>Action</th></tr>`;
+
+    clearedItems.sort((a,b)=>new Date(a.expiry)-new Date(b.expiry));
 
     clearedItems.forEach((item,index)=>{
         let daysLeft = calculateDays(item.expiry);
@@ -223,7 +223,7 @@ function renderClearedTable(){
     });
 }
 
-// --- Toggle Cleared Tab ---
+// Toggle Cleared Tab
 function toggleClearedTab(){
     showingCleared = !showingCleared;
     if(showingCleared){
@@ -235,27 +235,26 @@ function toggleClearedTab(){
     }
 }
 
-// --- Clear Active Item ---
+// Clear Active Item
 function clearItem(index){
-    const item = items.splice(index,1)[0];
-    clearedItems.push(item);
-    saveData();
-    saveClearedData();
-    renderTable();
+    const item = items[index];
+    let data = {...item};
+    delete data.id; // remove id before creating new document
+    clearedCol.add(data).then(() => {
+        itemsCol.doc(item.id).delete();
+    });
 }
 
-// --- Permanently Delete Cleared ---
+// Permanently Delete Cleared
 function permanentDelete(index){
-    clearedItems.splice(index,1);
-    saveClearedData();
-    renderClearedTable();
+    clearedCol.doc(clearedItems[index].id).delete();
 }
 
-// --- Filter ---
-function filterByAircraft(ac){ currentFilter=(currentFilter===ac?"":ac); renderTable(); }
+// Filter
+function filterByAircraft(ac){ currentFilter=(currentFilter===ac?"":ac); if(!showingCleared) renderTable(); }
 
-// --- Other Actions ---
-function updateLink(i,v){ items[i].link=v; saveData(); }
+// Other Actions
+function updateLink(i,v){ itemsCol.doc(items[i].id).update({ link: v }); }
 function openLink(v){ if(v) window.open(v,"_blank"); else alert("No tracker link added."); }
 function handleRIE(i){
     const item=items[i];
@@ -269,37 +268,57 @@ function uploadRIE(i){
     const input=document.createElement("input"); input.type="file"; input.accept="image/*";
     input.onchange=(e)=>{ const file=e.target.files[0]; if(file){
         const reader=new FileReader();
-        reader.onload=function(evt){ item.rieImage=evt.target.result; saveData(); alert("RIE uploaded! Click RIE to view/replace."); renderTable(); }
+        reader.onload=function(evt){ 
+            itemsCol.doc(item.id).update({ rieImage: evt.target.result }).then(() => {
+                alert("RIE uploaded! Click RIE to view/replace."); 
+            }).catch(err => {
+                alert("Error uploading image: " + err.message);
+            });
+        }
         reader.readAsDataURL(file);
     }}
     input.click();
 }
 
-// --- Add / Update Item ---
+// Add / Update Item
 function addOrUpdateItem(){
     let aircraft=document.getElementById("aircraft").value;
     let aircraftDate=document.getElementById("aircraftDate").value;
     let desc=document.getElementById("desc").value;
     let expiry=document.getElementById("expiry").value;
     if(!aircraft || !desc || !expiry){ alert("Please fill all fields"); return; }
-    if(editIndex!==null){ items[editIndex]={...items[editIndex], aircraft, aircraftDate, desc, expiry}; editIndex=null; document.getElementById("addBtn").innerText="Add"; }
-    else items.push({aircraft, aircraftDate, desc, expiry, link:"", rieImage:"", rectification:""}); 
-    saveData(); renderTable();
+    
+    if(editId!==null){ 
+        itemsCol.doc(editId).update({ aircraft, aircraftDate, desc, expiry });
+        editId=null; 
+        document.getElementById("addBtn").innerText="Add"; 
+    }
+    else {
+        itemsCol.add({aircraft, aircraftDate, desc, expiry, link:"", rieImage:"", rectification:""});
+    }
+    
     document.getElementById("aircraft").value=""; 
     document.getElementById("aircraftDate").value="";
     document.getElementById("desc").value=""; 
     document.getElementById("expiry").value="";
 }
-function editItem(i){ let item=items[i]; document.getElementById("aircraft").value=item.aircraft; document.getElementById("aircraftDate").value=item.aircraftDate || ""; document.getElementById("desc").value=item.desc; document.getElementById("expiry").value=item.expiry; editIndex=i; document.getElementById("addBtn").innerText="Update"; }
+function editItem(i){ 
+    let item=items[i]; 
+    document.getElementById("aircraft").value=item.aircraft; 
+    document.getElementById("aircraftDate").value=item.aircraftDate || ""; 
+    document.getElementById("desc").value=item.desc; 
+    document.getElementById("expiry").value=item.expiry; 
+    editId=item.id; 
+    document.getElementById("addBtn").innerText="Update";
+}
 function generateMail(a,d,e){
     const subject="Request for Hangar Parking – Cabin CF Expiry";
     const body=`Dear Planning,\n\nAircraft Registration: ${a}\nItem Description: ${d}\nExpiry Date: ${e}\n\nKindly arrange hangar parking at White Body Hangar for rectification.\nCoordination with Aircraft Furnishing Shop will be carried out accordingly.\n\nRequest your support.\n\nRegards,\nCabin Maintenance`;
     const gmailLink="https://mail.google.com/mail/?view=cm&fs=1&to=planning@yourcompany.com&su="+encodeURIComponent(subject)+"&body="+encodeURIComponent(body);
     window.open(gmailLink,"_blank");
 }
-function deleteItem(i){ items.splice(i,1); saveData(); renderTable(); }
 
-// --- Export JSON ---
+// Export
 function exportData(){ 
     const dataToExport = { active: items, cleared: clearedItems };
     const dataStr = JSON.stringify(dataToExport,null,2);
@@ -310,40 +329,41 @@ function exportData(){
     URL.revokeObjectURL(url);
 }
 
-// --- Import JSON ---
+// Import
 const importFileInput = document.getElementById("importFile");
-importFileInput.addEventListener("change", function(){
+importFileInput.addEventListener("change", async function(){
     const file = importFileInput.files[0];
     if(!file) return;
     const reader = new FileReader();
-    reader.onload = function(e){
+    reader.onload = async function(e){
         try{
             const imported = JSON.parse(e.target.result);
-            if(imported.active && imported.cleared){
-                items = imported.active;
-                clearedItems = imported.cleared;
-                saveData();
-                saveClearedData();
-                renderTable();
-                alert("Data imported successfully!");
-            } else if(Array.isArray(imported)){
-                items = imported;
-                saveData();
-                renderTable();
-                alert("Data imported successfully! (Old format, cleared entries not included)");
-            } else alert("Invalid JSON file.");
+            if(!confirm("This will import your JSON file into the LIVE Firebase database. Are you sure?")) {
+                importFileInput.value = "";
+                return;
+            }
+            
+            let toImportActive = imported.active || (Array.isArray(imported) ? imported : []);
+            let toImportCleared = imported.cleared || [];
+            
+            for(let item of toImportActive) {
+                let data = {...item};
+                delete data.id; // remove id so we gen a new fresh one
+                await itemsCol.add(data);
+            }
+            for(let item of toImportCleared) {
+                let data = {...item};
+                delete data.id;
+                await clearedCol.add(data);
+            }
+            
+            alert("Data imported successfully to Firebase!");
+            importFileInput.value = "";
         } catch(err){ alert("Error parsing JSON: "+err); }
     }
     reader.readAsText(file);
-    importFileInput.value = "";
 });
 function importData(){ importFileInput.click(); }
-
-// --- Auto refresh ---
-setInterval(()=>{ if(!showingCleared) renderTable(); },60000);
-
-// --- Load JSON on start ---
-loadJSON();
 
 </script>
 
