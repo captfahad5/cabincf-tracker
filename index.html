@@ -31,11 +31,29 @@
     .hero .sub { margin-top: 6px; font-size: 14px; font-weight: 600; opacity: .95; }
     .panel { padding: 16px 18px; border-top: 1px solid var(--line); }
     .panel h3 { margin: 0 0 12px; font-size: 16px; font-weight: 800; }
-    .form-grid { display: grid; grid-template-columns: 1fr 1fr 2fr 1fr auto; gap: 10px; align-items: end; }
-    .field { display: flex; flex-direction: column; gap: 6px; }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr minmax(260px, 2fr) minmax(260px, 2fr) 1fr auto;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+    }
+
     .field label { font-size: 12px; color: var(--muted); font-weight: 700; }
     input, button { font-family: inherit; font-size: 13px; border-radius: 10px; border: 1px solid var(--line); padding: 9px 10px; }
     input:focus { outline: none; border-color: #8cb5ff; box-shadow: 0 0 0 3px rgba(11,102,255,.15); }
+
+    #desc, #rectification {
+      width: 100%;
+    }
+
     button { cursor: pointer; font-weight: 700; }
     .btn-primary { background: var(--brand); color: #fff; border-color: var(--brand); }
     .btn-primary:hover { background: var(--brand-dark); }
@@ -44,14 +62,32 @@
     .exportBtn, .importBtn { background: #1f9d57; }
     #clearedTabBtn { background: #5f6672; }
     .table-wrap { border-top: 1px solid var(--line); overflow: auto; }
-    table { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 1100px; }
+    table { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 1200px; }
     th, td { border-bottom: 1px solid #eaf0fa; padding: 9px 8px; text-align: center; vertical-align: middle; font-size: 13px; }
     th {
       position: sticky; top: 0; z-index: 2; background: #f7faff; border-bottom: 1px solid var(--line);
       font-weight: 800; color: #23324d; white-space: nowrap;
     }
+
     td:nth-child(1), td:nth-child(2) { white-space: nowrap; }
-    td:nth-child(3), td:nth-child(7) { text-align: left; word-break: break-word; white-space: pre-wrap; }
+
+    /* Description and Rectification exact same width */
+    #cfTable th:nth-child(3),
+    #cfTable td:nth-child(3),
+    #cfTable th:nth-child(7),
+    #cfTable td:nth-child(7) {
+      width: 260px;
+      min-width: 260px;
+      max-width: 260px;
+    }
+
+    #cfTable td:nth-child(3),
+    #cfTable td:nth-child(7) {
+      text-align: left;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+
     .statusCell { font-weight: 800; border-radius: 8px; }
     .rowRed { background: #ffe7e7; color: #8b1717; font-weight: 700; }
     .orange { background: #fff1dd; color: #8f5b0c; }
@@ -67,9 +103,11 @@
     .trackerInput { width: 110px; font-size: 12px; padding: 6px; }
     .aircraftCell { cursor: pointer; color: #112240; font-weight: 800; }
     .aircraftCell:hover { color: var(--brand); text-decoration: underline; }
-    @media (max-width: 1000px) {
+
+    @media (max-width: 1100px) {
       .form-grid { grid-template-columns: 1fr 1fr; }
-      .form-grid .field:nth-child(3) { grid-column: 1 / -1; }
+      .form-grid .field:nth-child(3),
+      .form-grid .field:nth-child(4) { grid-column: 1 / -1; }
     }
   </style>
 </head>
@@ -77,7 +115,7 @@
   <div class="app">
     <div class="hero">
       <h1>Cabin CF Live Expiry Tracker</h1>
-      <div class="sub">Made By Capt Fahad | Powered by AI 💻</div>
+      <div class="sub">Made By Capt Fahad | Powered by AI</div>
     </div>
 
     <div class="panel">
@@ -85,7 +123,8 @@
       <div class="form-grid">
         <div class="field"><label for="aircraft">Aircraft</label><input type="text" id="aircraft" placeholder="A6-XXX" /></div>
         <div class="field"><label for="aircraftDate">Date</label><input type="date" id="aircraftDate" /></div>
-        <div class="field"><label for="desc">Description</label><input type="text" id="desc" placeholder="Item description" /></div>
+        <div class="field"><label for="desc">Description</label><input type="text" id="desc" placeholder="Item description (optional)" /></div>
+        <div class="field"><label for="rectification">Rectification</label><input type="text" id="rectification" placeholder="Rectification details (optional)" /></div>
         <div class="field"><label for="expiry">Expiry Date</label><input type="date" id="expiry" /></div>
         <button id="addBtn" type="button" class="btn-primary" onclick="addOrUpdateItem()">Add</button>
       </div>
@@ -171,11 +210,6 @@
       if (showingCleared) renderClearedTable();
     });
 
-    function updateRectification(i, value) {
-      const item = items[i];
-      itemsCol.doc(item.id).update({ rectification: value });
-    }
-
     function renderTable() {
       const table = document.getElementById("cfTable");
       table.innerHTML = "<tr><th>Aircraft</th><th>Date</th><th>Description</th><th>Expiry Date</th><th>Days Left</th><th>Status</th><th>Rectification</th><th>Action</th></tr>";
@@ -210,11 +244,11 @@
         table.innerHTML += '<tr class="' + rowClass + '">' +
           '<td class="aircraftCell" onclick=\'filterByAircraft(' + JSON.stringify(item.aircraft) + ')\'>' + esc(item.aircraft) + '</td>' +
           '<td>' + esc(formatDateDMY(item.aircraftDate || "")) + '</td>' +
-          '<td>' + esc(item.desc) + '</td>' +
+          '<td>' + esc(item.desc || "") + '</td>' +
           '<td>' + esc(formatDateDMY(item.expiry)) + '</td>' +
           '<td>' + daysLeft + '</td>' +
           '<td class="statusCell ' + statusClass + '">' + statusText + '</td>' +
-          '<td contenteditable="true" onblur="updateRectification(' + index + ', this.innerText)" style="max-width:400px; min-width:200px;">' + esc(item.rectification || "") + '</td>' +
+          '<td>' + esc(item.rectification || "") + '</td>' +
           '<td><div class="actionBtns">' +
             actionBtn +
             '<button class="editBtn" onclick="editItem(' + index + ')">Edit</button>' +
@@ -246,7 +280,7 @@
         table.innerHTML += '<tr class="' + rowClass + '">' +
           '<td>' + esc(item.aircraft) + '</td>' +
           '<td>' + esc(formatDateDMY(item.aircraftDate || "")) + '</td>' +
-          '<td>' + esc(item.desc) + '</td>' +
+          '<td>' + esc(item.desc || "") + '</td>' +
           '<td>' + esc(formatDateDMY(item.expiry)) + '</td>' +
           '<td>' + daysLeft + '</td>' +
           '<td class="statusCell ' + statusClass + '">' + statusText + '</td>' +
@@ -326,10 +360,11 @@
       const aircraft = document.getElementById("aircraft").value.trim();
       const aircraftDate = document.getElementById("aircraftDate").value;
       const desc = document.getElementById("desc").value.trim();
+      const rectification = document.getElementById("rectification").value.trim();
       const expiry = document.getElementById("expiry").value;
 
-      if (!aircraft || !desc || !expiry) {
-        alert("Please fill all fields");
+      if (!aircraft || !expiry) {
+        alert("Please fill Aircraft and Expiry Date");
         return;
       }
 
@@ -337,15 +372,17 @@
       addBtn.disabled = true;
       try {
         if (editId !== null) {
-          await itemsCol.doc(editId).update({ aircraft, aircraftDate, desc, expiry });
+          await itemsCol.doc(editId).update({ aircraft, aircraftDate, desc, rectification, expiry });
           editId = null;
           addBtn.innerText = "Add";
         } else {
-          await itemsCol.add({ aircraft, aircraftDate, desc, expiry, link: "", rieImage: "", rectification: "" });
+          await itemsCol.add({ aircraft, aircraftDate, desc, rectification, expiry, link: "", rieImage: "" });
         }
+
         document.getElementById("aircraft").value = "";
         document.getElementById("aircraftDate").value = "";
         document.getElementById("desc").value = "";
+        document.getElementById("rectification").value = "";
         document.getElementById("expiry").value = "";
       } catch (err) {
         alert("Add/Update failed: " + err.message);
@@ -360,6 +397,7 @@
       document.getElementById("aircraft").value = item.aircraft || "";
       document.getElementById("aircraftDate").value = item.aircraftDate || "";
       document.getElementById("desc").value = item.desc || "";
+      document.getElementById("rectification").value = item.rectification || "";
       document.getElementById("expiry").value = item.expiry || "";
       editId = item.id;
       document.getElementById("addBtn").innerText = "Update";
@@ -436,4 +474,3 @@
   </script>
 </body>
 </html>
-
